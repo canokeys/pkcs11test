@@ -38,17 +38,24 @@ extern bool g_init_token;
 // The flags describing the capabilities of the token.
 extern CK_FLAGS g_token_flags;
 // The token label.
-extern CK_UTF8CHAR g_token_label[32];  // blank padded
+extern CK_UTF8CHAR g_token_label[32]; // blank padded
 // User PIN.  Only used if (g_token_flags & CKF_LOGIN_REQUIRED).
-extern const char* g_user_pin;
+extern const char *g_user_pin;
 // Security Officer PIN.  Only used if (g_token_flags & CKF_LOGIN_REQUIRED).
-extern const char* g_so_pin;
-// User PIN after token reset.  Only used if (g_token_flags & CKF_LOGIN_REQUIRED).
-extern const char* g_reset_user_pin;
-// Security Officer PIN after token reset.  Only used if (g_token_flags & CKF_LOGIN_REQUIRED).
-extern const char* g_reset_so_pin;
+extern const char *g_so_pin;
+extern CK_ULONG g_so_pin_len;
+// Explicit opt-in for the CanoKey-only PIV overwrite test.
+extern bool g_destructive_piv;
+extern bool g_expected_serial_set;
+extern CK_ULONG g_expected_serial;
+// User PIN after token reset.  Only used if (g_token_flags &
+// CKF_LOGIN_REQUIRED).
+extern const char *g_reset_user_pin;
+// Security Officer PIN after token reset.  Only used if (g_token_flags &
+// CKF_LOGIN_REQUIRED).
+extern const char *g_reset_so_pin;
 // The name of the cipher for the wrapped key in wrapping tests.
-extern const char* g_wrap_mechanism;
+extern const char *g_wrap_mechanism;
 
 // Algorithm information.  These tables are effectively const, but not marked as
 // const so operator[] can be used for convenience.
@@ -104,10 +111,10 @@ extern CK_BBOOL g_ck_true;
 // Label value to use for all test-created objects.  If the test leaves
 // the token in a bad state, this label can be used to spot what needs
 // cleaning up.
-extern const char* g_label;
+extern const char *g_label;
 extern CK_ULONG g_label_len;
 
-}  // namespace test
-}  // namespace pkcs11
+} // namespace test
+} // namespace pkcs11
 
-#endif  // GLOBALS_H
+#endif // GLOBALS_H

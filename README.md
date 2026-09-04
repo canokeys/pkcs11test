@@ -1,6 +1,9 @@
 pkcs11Test: A PKCS#11 Test Suite
 ================================
 
+For the CanoKey Windows/PIV build, binary management-key handling, and
+destructive RSA/PIV tests, see [README-cano.md](README-cano.md).
+
 **Warning: Do not run this test suite against a PKCS#11 token that contains real data; some of the tests may erase or
   permanently lock the token.**
 

@@ -13,40 +13,49 @@
 // limitations under the License.
 
 // C headers
+#include <cstdlib>
+#include <cstring>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #include <unistd.h>
+#endif
 
 // C++ headers
 #include <cctype>
-#include <cstring>
-#include <cstdlib>
 #include <iostream>
-#include <string>
-#include <vector>
 #include <map>
 #include <memory>
+#include <string>
+#include <vector>
 
 // Local headers
 #include "pkcs11test.h"
 
-using namespace std;  // So sue me
+using namespace std; // So sue me
 
 namespace pkcs11 {
 namespace test {
 
 bool IsSpacePadded(const CK_UTF8CHAR *field, int len) {
   for (int ii = 0; ii < len; ii++) {
-    if (!isprint(field[ii])) return false;
-    if (field[ii] == '\0') return false;
+    if (!isprint(field[ii]))
+      return false;
+    if (field[ii] == '\0')
+      return false;
   }
   return true;
 }
 
 int GetInteger(const CK_CHAR *val, int len) {
-  if (len <= 0) return -1;
+  if (len <= 0)
+    return -1;
   int value = 0;
   for (int ii = 0; ii < len; ii++) {
-    if (val[ii] < '0' || val[ii] > '9') return -1;
+    if (val[ii] < '0' || val[ii] > '9')
+      return -1;
     int digit = val[ii] - '0';
     value = (value * 10) + digit;
   }
@@ -54,9 +63,9 @@ int GetInteger(const CK_CHAR *val, int len) {
 }
 
 typedef vector<string> TestList;
-typedef map<string, std::unique_ptr<TestList> > SkippedTestMap;
+typedef map<string, std::unique_ptr<TestList>> SkippedTestMap;
 static SkippedTestMap skipped_tests;
-void TestSkipped(const char *testcase, const char *test, const string& reason) {
+void TestSkipped(const char *testcase, const char *test, const string &reason) {
   if (skipped_tests.find(reason) == skipped_tests.end()) {
     skipped_tests[reason] = std::unique_ptr<TestList>(new TestList);
   }
@@ -68,12 +77,12 @@ void TestSkipped(const char *testcase, const char *test, const string& reason) {
 
 namespace {
 
-void ShowSkippedTests(ostream& os) {
+void ShowSkippedTests(ostream &os) {
   for (SkippedTestMap::iterator skiplist = skipped_tests.begin();
        skiplist != skipped_tests.end(); ++skiplist) {
     os << "Following tests were skipped because: " << skiplist->first << endl;
     for (size_t ii = 0; ii < skiplist->second->size(); ++ii) {
-      const string& testname((*skiplist->second)[ii]);
+      const string &testname((*skiplist->second)[ii]);
       os << "  " << testname << endl;
     }
   }
@@ -88,6 +97,7 @@ void usage() {
   cerr << "  -v      : verbose output" << endl;
   cerr << "  -u pwd  : user PIN/password" << endl;
   cerr << "  -o pwd  : security officer PIN/password" << endl;
+  cerr << "  -o-hex hex : binary security officer key (hex encoded)" << endl;
   cerr << "  -w name : cipher to use for keys being wrapped, one of: { ";
   for (const auto &key : kCipherInfo) {
     static int i = 0;
@@ -101,13 +111,20 @@ void usage() {
     i++;
   }
   cerr << " }" << endl;
-  cerr << "  -I      : perform token init tests **WILL WIPE TOKEN CONTENTS**" << endl;
-  cerr << "  -U pwd  : default user PIN/password expected after token init" << endl;
-  cerr << "  -O pwd  : default security officer PIN/password expected after token init" << endl;
+  cerr << "  -I      : perform token init tests **WILL WIPE TOKEN CONTENTS**"
+       << endl;
+  cerr << "  -D      : enable the CanoKey PIV ID 06 overwrite test" << endl;
+  cerr << "  -E n    : expected token serial for -D" << endl;
+  cerr << "  -U pwd  : default user PIN/password expected after token init"
+       << endl;
+  cerr << "  -O pwd  : default security officer PIN/password expected after "
+          "token init"
+       << endl;
   exit(1);
 }
 
-CK_C_GetFunctionList load_pkcs11_library(const char* libpath, const char* libname) {
+CK_C_GetFunctionList load_pkcs11_library(const char *libpath,
+                                         const char *libname) {
   if (libname == nullptr) {
     cerr << "No library name provided" << endl;
     exit(1);
@@ -115,8 +132,13 @@ CK_C_GetFunctionList load_pkcs11_library(const char* libpath, const char* libnam
   string fullname;
   if (libpath != nullptr) {
     fullname = libpath;
-    if (fullname.at(fullname.size() - 1) != '/') {
+    const char last = fullname.at(fullname.size() - 1);
+    if (last != '/' && last != '\\') {
+#ifdef _WIN32
+      fullname += '\\';
+#else
       fullname += '/';
+#endif
     }
   }
   fullname += libname;
@@ -125,28 +147,42 @@ CK_C_GetFunctionList load_pkcs11_library(const char* libpath, const char* libnam
     exit(1);
   }
 
-  void* lib = dlopen(fullname.c_str(), RTLD_NOW);
+#ifdef _WIN32
+  HMODULE lib = LoadLibraryA(fullname.c_str());
+  if (lib == nullptr) {
+    cerr << "Failed to LoadLibraryA(" << fullname
+         << "), error=" << GetLastError() << endl;
+    exit(1);
+  }
+  FARPROC fn = GetProcAddress(lib, "C_GetFunctionList");
+#else
+  void *lib = dlopen(fullname.c_str(), RTLD_NOW);
   if (lib == nullptr) {
     cerr << "Failed to dlopen(" << fullname << ")" << endl;
     exit(1);
   }
-
-  void* fn = dlsym(lib, "C_GetFunctionList");
+  void *fn = dlsym(lib, "C_GetFunctionList");
+#endif
   if (fn == nullptr) {
-    cerr<< "Failed to dlsym(\"C_GetFunctionList\")" << endl;
+#ifdef _WIN32
+    cerr << "Failed to GetProcAddress(\"C_GetFunctionList\"), error="
+         << GetLastError() << endl;
+#else
+    cerr << "Failed to dlsym(\"C_GetFunctionList\")" << endl;
+#endif
     exit(1);
   }
-  return (CK_C_GetFunctionList)fn;
+  return reinterpret_cast<CK_C_GetFunctionList>(fn);
 }
 
-}  // namespace
-}  // namespace test
-}  // namespace pkcs11
+} // namespace
+} // namespace test
+} // namespace pkcs11
 
 using namespace pkcs11;
 using namespace pkcs11::test;
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   // Let gTest have first crack at the arguments.
   ::testing::InitGoogleTest(&argc, argv);
 
@@ -154,59 +190,90 @@ int main(int argc, char* argv[]) {
   bool explicit_slotid = false;
   bool use_slot_index = false;
   unsigned slot_index = 0;
-  int opt;
-  const char* module_name = nullptr;
-  const char* module_path = nullptr;
-  while ((opt = getopt(argc, argv, "vIXl:m:s:S:u:o:U:O:w:h")) != -1) {
-    switch (opt) {
-      case 'v':
-        g_verbose = true;
-        break;
-      case 'I':
-        g_init_token = true;
-        break;
-      case 'X':
-        g_so_tests = false;
-        break;
-      case 'l':
-        module_path = optarg;
-        break;
-      case 'm':
-        module_name = optarg;
-        break;
-      case 's':
-        g_slot_id = atoi(optarg);
-        explicit_slotid = true;
-        break;
-      case 'S':
-        slot_index = atoi(optarg);
-        use_slot_index = true;
-      case 'u':
-        g_user_pin = optarg;
-        break;
-      case 'o':
-        g_so_pin = optarg;
-        break;
-      case 'U':
-        g_reset_user_pin = optarg;
-        break;
-      case 'O':
-        g_reset_so_pin = optarg;
-        break;
-      case 'w':
-        g_wrap_mechanism = optarg;
-        break;
-      case 'h':
-      default:
+  const char *module_name = nullptr;
+  const char *module_path = nullptr;
+  static vector<CK_UTF8CHAR> so_pin_hex;
+  for (int arg = 1; arg < argc;) {
+    const char *option = argv[arg++];
+    if (strcmp(option, "-v") == 0) {
+      g_verbose = true;
+    } else if (strcmp(option, "-I") == 0) {
+      g_init_token = true;
+    } else if (strcmp(option, "-D") == 0) {
+      g_destructive_piv = true;
+    } else if (strcmp(option, "-X") == 0) {
+      g_so_tests = false;
+    } else if (strcmp(option, "-o-hex") == 0) {
+      if (arg >= argc)
         usage();
-        break;
+      const char *value = argv[arg++];
+      size_t hexLen = strlen(value);
+      if (hexLen == 0 || (hexLen & 1) != 0 || hexLen / 2 > 64)
+        usage();
+      so_pin_hex.clear();
+      so_pin_hex.reserve(hexLen / 2);
+      for (size_t i = 0; i < hexLen; i += 2) {
+        auto hexDigit = [](char digit) -> int {
+          if (digit >= '0' && digit <= '9')
+            return digit - '0';
+          if (digit >= 'a' && digit <= 'f')
+            return digit - 'a' + 10;
+          if (digit >= 'A' && digit <= 'F')
+            return digit - 'A' + 10;
+          return -1;
+        };
+        int high = hexDigit(value[i]);
+        int low = hexDigit(value[i + 1]);
+        if (high < 0 || low < 0)
+          usage();
+        so_pin_hex.push_back(static_cast<CK_UTF8CHAR>((high << 4) | low));
+      }
+      g_so_pin = reinterpret_cast<const char *>(so_pin_hex.data());
+      g_so_pin_len = static_cast<CK_ULONG>(so_pin_hex.size());
+    } else if (strcmp(option, "-E") == 0 || strcmp(option, "-l") == 0 ||
+               strcmp(option, "-m") == 0 || strcmp(option, "-s") == 0 ||
+               strcmp(option, "-S") == 0 || strcmp(option, "-u") == 0 ||
+               strcmp(option, "-o") == 0 || strcmp(option, "-U") == 0 ||
+               strcmp(option, "-O") == 0 || strcmp(option, "-w") == 0) {
+      if (arg >= argc)
+        usage();
+      const char *value = argv[arg++];
+      if (strcmp(option, "-E") == 0) {
+        g_expected_serial = static_cast<CK_ULONG>(strtoul(value, nullptr, 10));
+        g_expected_serial_set = true;
+      } else if (strcmp(option, "-l") == 0) {
+        module_path = value;
+      } else if (strcmp(option, "-m") == 0) {
+        module_name = value;
+      } else if (strcmp(option, "-s") == 0) {
+        g_slot_id = atoi(value);
+        explicit_slotid = true;
+      } else if (strcmp(option, "-S") == 0) {
+        slot_index = atoi(value);
+        use_slot_index = true;
+      } else if (strcmp(option, "-u") == 0) {
+        g_user_pin = value;
+      } else if (strcmp(option, "-o") == 0) {
+        g_so_pin = value;
+        g_so_pin_len = static_cast<CK_ULONG>(strlen(value));
+      } else if (strcmp(option, "-U") == 0) {
+        g_reset_user_pin = value;
+      } else if (strcmp(option, "-O") == 0) {
+        g_reset_so_pin = value;
+      } else {
+        g_wrap_mechanism = value;
+      }
+    } else if (strcmp(option, "-h") == 0 || option[0] == '-') {
+      usage();
     }
   }
 
   // Load the module.
-  CK_C_GetFunctionList get_fn_list = load_pkcs11_library(module_path, module_name);
+  CK_C_GetFunctionList get_fn_list =
+      load_pkcs11_library(module_path, module_name);
 
-  // Retrieve the set of function pointers (C_GetFunctionList is the only function it's OK to call before C_Initialize).
+  // Retrieve the set of function pointers (C_GetFunctionList is the only
+  // function it's OK to call before C_Initialize).
   if (get_fn_list(&g_fns) != CKR_OK) {
     cerr << "Failed to retrieve list of functions" << endl;
     exit(1);
@@ -230,7 +297,8 @@ int main(int argc, char* argv[]) {
       } else {
         if (!use_slot_index) {
           if (slot_count > 1) {
-            cerr << "Multiple slots with tokens available; specify one with -s" << endl;
+            cerr << "Multiple slots with tokens available; specify one with -s"
+                 << endl;
             for (unsigned i = 0; i < slot_count; i++) {
               cerr << "Slot " << i << "= ID: " << slots[i] << endl;
             }
@@ -240,7 +308,8 @@ int main(int argc, char* argv[]) {
         }
 
         if (slot_index >= slot_count) {
-          cerr << "Slot index " << slot_index << " invalid, there are only " << slot_count << " slots." << endl;
+          cerr << "Slot index " << slot_index << " invalid, there are only "
+               << slot_count << " slots." << endl;
           exit(1);
         }
 
@@ -257,7 +326,8 @@ int main(int argc, char* argv[]) {
   memset(&slot_info, 0, sizeof(slot_info));
   rv = g_fns->C_GetSlotInfo(g_slot_id, &slot_info);
   if (rv != CKR_OK) {
-    cerr << "Failed to get slot info (" << rv_name(rv) << ") for slot " << g_slot_id << endl;
+    cerr << "Failed to get slot info (" << rv_name(rv) << ") for slot "
+         << g_slot_id << endl;
     exit(1);
   }
   if (!(slot_info.flags & CKF_TOKEN_PRESENT)) {
@@ -268,7 +338,8 @@ int main(int argc, char* argv[]) {
   memset(&token, 0, sizeof(token));
   rv = g_fns->C_GetTokenInfo(g_slot_id, &token);
   if (rv != CKR_OK) {
-    cerr << "Failed to get token info (" << rv_name(rv) << ") for token in slot " << g_slot_id << endl;
+    cerr << "Failed to get token info (" << rv_name(rv)
+         << ") for token in slot " << g_slot_id << endl;
     exit(1);
   }
   rv = g_fns->C_Finalize(NULL_PTR);
@@ -283,7 +354,8 @@ int main(int argc, char* argv[]) {
     // Disable all tests that require login in their fixture.
     // This unfortunately relies on some gTest innards.
     string filter(testing::GTEST_FLAG(filter).c_str());
-    if (!filter.empty()) filter += ":";
+    if (!filter.empty())
+      filter += ":";
     filter += "-*UserSessionTest.*:*SOSessionTest.*";
     testing::GTEST_FLAG(filter) = filter;
   }
